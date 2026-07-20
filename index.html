@@ -390,35 +390,36 @@
             }
         }
 
-        async function addToMembersWebsite(PRENOM, NOM) {
+        async function trackConnectionEvent(PRENOM, NOM, userType = 'registered') {
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
 
             try {
-                console.log(`[TRACKING] Ajout à members_website: ${PRENOMClean} ${NOMClean}`);
+                console.log(`[TRACKING] Enregistrement de connexion: ${PRENOMClean} ${NOMClean} (${userType})`);
 
                 const { data, error } = await sbClient
                     .from('members_website')
                     .insert([
                         {
                             prenom: PRENOMClean,
-                            nom: NOMClean
+                            nom: NOMClean,
+                            user_type: userType
                         }
                     ])
                     .select();
 
                 if (error) {
-                    console.error('[SUPABASE ERROR] Erreur lors de l\'ajout à members_website:', error);
-                    console.warn('[TRACKING] L\'ajout au tracking a échoué, mais l\'authentification continue');
+                    console.error('[SUPABASE ERROR] Erreur lors de l\'enregistrement de connexion:', error);
+                    console.warn('[TRACKING] L\'enregistrement du suivi a échoué, mais la session continue');
                     return false;
                 }
 
-                console.log('[TRACKING] Succès:', data);
+                console.log('[TRACKING] Événement enregistré avec succès:', data);
                 return true;
 
             } catch (err) {
                 console.error('[ERREUR FATALE] Exception lors du tracking:', err);
-                console.warn('[TRACKING] L\'ajout au tracking a échoué, mais l\'authentification continue');
+                console.warn('[TRACKING] L\'enregistrement du suivi a échoué, mais la session continue');
                 return false;
             }
         }
@@ -439,7 +440,8 @@
                     .insert([
                         {
                             prenom: PRENOMClean,
-                            nom: NOMClean
+                            nom: NOMClean,
+                            user_type: 'new_registration'
                         }
                     ])
                     .select();
@@ -491,7 +493,9 @@
                 
                 const PRENOMClean = sanitizeInput(PRENOM);
                 const NOMClean = sanitizeInput(NOM);
-                await addToMembersWebsite(PRENOMClean, NOMClean);
+                
+                // ✅ MODIFICATION : Enregistrement du suivi de connexion (à chaque connexion)
+                await trackConnectionEvent(PRENOMClean, NOMClean, 'authenticated');
                 
                 storeUserSession(PRENOMClean, NOMClean, false, memberRef);
                 showMessage('Bienvenue ! Redirection en cours...', 'success');
@@ -513,12 +517,15 @@
             await registerMember(PRENOM, NOM);
         });
 
-        document.getElementById('btnCancelRegister').addEventListener('click', () => {
+        document.getElementById('btnCancelRegister').addEventListener('click', async () => {
             document.getElementById('registerPrompt').style.display = 'none';
             const PRENOM = document.getElementById('PRENOM').value;
             const NOM = document.getElementById('NOM').value;
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
+            
+            // ✅ MODIFICATION : Enregistrement du suivi pour les invités refusant l'enregistrement
+            await trackConnectionEvent(PRENOMClean, NOMClean, 'guest_no_register');
             
             storeUserSession(PRENOMClean, NOMClean, true, null);
             showMessage('Connexion en mode invité. Redirection en cours...', 'success');
@@ -527,11 +534,14 @@
             }, 1000);
         });
 
-        document.getElementById('btnGuest').addEventListener('click', () => {
+        document.getElementById('btnGuest').addEventListener('click', async () => {
             const PRENOM = document.getElementById('PRENOM').value || 'Invité';
             const NOM = document.getElementById('NOM').value || '';
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
+            
+            // ✅ MODIFICATION : Enregistrement du suivi pour les invités directs
+            await trackConnectionEvent(PRENOMClean, NOMClean, 'guest_direct');
             
             storeUserSession(PRENOMClean, NOMClean, true, null);
             showMessage('Connexion en mode invité. Redirection en cours...', 'success');
