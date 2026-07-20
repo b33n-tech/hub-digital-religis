@@ -1,3 +1,6 @@
+### index.html
+
+
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -216,78 +219,9 @@
         .btn-cancel:hover {
             background: #cbd5e0;
         }
-
-        /* ===== STYLES COMPTEUR ===== */
-        .visitor-counter {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 12px 16px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            font-size: 12px;
-            color: #666;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            backdrop-filter: blur(10px);
-            z-index: 1000;
-        }
-
-        .visitor-counter.hidden {
-            display: none;
-        }
-
-        .counter-badge {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 50%;
-            width: 28px;
-            height: 28px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 13px;
-        }
-
-        .counter-label {
-            font-weight: 500;
-            color: #333;
-        }
-
-        .counter-sublabel {
-            font-size: 11px;
-            color: #999;
-        }
-
-        @media (max-width: 600px) {
-            .visitor-counter {
-                top: 10px;
-                right: 10px;
-                padding: 10px 12px;
-                font-size: 11px;
-            }
-
-            .counter-badge {
-                width: 24px;
-                height: 24px;
-                font-size: 12px;
-            }
-        }
     </style>
 </head>
 <body>
-    <!-- Compteur de visiteurs -->
-    <div class="visitor-counter hidden" id="visitorCounter">
-        <div class="counter-badge" id="counterBadge">0</div>
-        <div>
-            <div class="counter-label">Visiteurs</div>
-            <div class="counter-sublabel">cette session</div>
-        </div>
-    </div>
-
     <div class="login-container">
         <div class="login-header">
             <h1>ReligiS</h1>
@@ -330,8 +264,6 @@
         const SUPABASE_ANON_KEY = 'sb_publishable_NpdAjISRkvlmuO6cY3xljA_79dxiqkZ';
 
         let sbClient = null;
-        let visitorCounterInterval = null;
-        let sessionId = null;
 
         function initSupabaseClient() {
             try {
@@ -374,7 +306,6 @@
             sessionStorage.setItem('user_is_guest', isGuest);
             sessionStorage.setItem('user_ref', userRef);
             sessionStorage.setItem('session_start', new Date().toISOString());
-            sessionStorage.setItem('session_id', sessionId);
         }
 
         function redirectToDashboard() {
@@ -384,101 +315,6 @@
         function sanitizeInput(input) {
             return input.trim().replace(/\s+/g, ' ');
         }
-
-        // ===== GÉNÉRER UN ID UNIQUE POUR LA SESSION =====
-        function generateSessionId() {
-            return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        }
-
-        // ===== TRACKER LA VISITE DÈS LE CHARGEMENT =====
-        async function trackPageVisit() {
-            try {
-                console.log('[PAGE_VISIT] Enregistrement de la visite de la page');
-
-                sessionId = generateSessionId();
-                console.log('[PAGE_VISIT] Session ID généré:', sessionId);
-
-                // Récupérer les infos du navigateur
-                const userAgent = navigator.userAgent;
-                const language = navigator.language;
-                const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-                const { data, error } = await sbClient
-                    .from('page_visits')
-                    .insert([
-                        {
-                            session_id: sessionId,
-                            user_agent: userAgent,
-                            language: language,
-                            timezone: timezone,
-                            page: 'login',
-                            // created_at est auto-généré
-                        }
-                    ])
-                    .select();
-
-                if (error) {
-                    console.error('[SUPABASE ERROR] Erreur lors de l\'enregistrement de la visite:', error);
-                    console.warn('[PAGE_VISIT] La visite de page n\'a pas pu être enregistrée');
-                    return false;
-                }
-
-                console.log('[PAGE_VISIT] Visite enregistrée avec succès:', data);
-                return true;
-
-            } catch (err) {
-                console.error('[ERREUR FATALE] Exception lors du tracking de visite:', err);
-                return false;
-            }
-        }
-
-        // ===== FONCTION COMPTEUR =====
-        async function fetchAndUpdateVisitorCounter() {
-            try {
-                console.log('[COUNTER] Actualisation du compteur de visiteurs');
-
-                // Compter le nombre de sessions UNIQUES (vrais visiteurs)
-                const { data, error } = await sbClient
-                    .from('page_visits')
-                    .select('session_id', { count: 'exact', head: true });
-
-                if (error) {
-                    console.error('[COUNTER ERROR] Erreur lors de la lecture du compteur:', error);
-                    return;
-                }
-
-                const totalCount = data ? data.length : 0;
-                console.log('[COUNTER] Total visiteurs uniques:', totalCount);
-
-                const counterBadge = document.getElementById('counterBadge');
-                const visitorCounter = document.getElementById('visitorCounter');
-
-                if (counterBadge) {
-                    counterBadge.textContent = totalCount;
-                }
-
-                if (visitorCounter && !visitorCounter.classList.contains('hidden')) {
-                    counterBadge.style.animation = 'pulse 0.4s ease';
-                    setTimeout(() => {
-                        counterBadge.style.animation = '';
-                    }, 400);
-                }
-
-            } catch (err) {
-                console.error('[COUNTER FATAL] Exception lors du comptage:', err);
-            }
-        }
-
-        // Animation pulse pour le badge
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes pulse {
-                0% { transform: scale(1); }
-                50% { transform: scale(1.1); }
-                100% { transform: scale(1); }
-            }
-        `;
-        document.head.appendChild(style);
 
         async function searchMemberInMembres(PRENOM, NOM) {
             hideMessage();
@@ -498,7 +334,7 @@
             setFormEnabled(false);
 
             try {
-                console.log(`[RECHERCHE] Recherche dans MEMBRES`);
+                console.log(`[RECHERCHE] Recherche simultanée dans MEMBRES et members_website`);
 
                 const { data: memberData, error: memberError } = await sbClient
                     .from('MEMBRES')
@@ -517,10 +353,32 @@
                     return null;
                 }
 
+                const { data: websiteData, error: websiteError } = await sbClient
+                    .from('members_website')
+                    .select('id, prenom, nom')
+                    .ilike('prenom', `%${PRENOMClean}%`)
+                    .ilike('nom', `%${NOMClean}%`)
+                    .limit(1);
+
+                if (websiteError) {
+                    console.error('[SUPABASE ERROR] Erreur lors de la recherche dans members_website:', websiteError);
+                    showMessage('Erreur lors de la vérification. Veuillez réessayer.', 'error');
+                    return null;
+                }
+
                 console.log(`[RECHERCHE] Résultats MEMBRES:`, memberData);
+                console.log(`[RECHERCHE] Résultats members_website:`, websiteData);
 
                 if (memberData && memberData.length > 0) {
                     return memberData;
+                }
+
+                if (websiteData && websiteData.length > 0) {
+                    return websiteData.map(item => ({
+                        REF: item.id,
+                        PRENOM: item.prenom,
+                        NOM: item.nom
+                    }));
                 }
                 
                 return [];
@@ -535,40 +393,35 @@
             }
         }
 
-        // ===== ENREGISTRER UNE INTERACTION (connexion/enregistrement) =====
-        async function trackUserInteraction(PRENOM, NOM, interactionType) {
+        async function addToMembersWebsite(PRENOM, NOM) {
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
 
             try {
-                console.log(`[INTERACTION] ${interactionType}: ${PRENOMClean} ${NOMClean}`);
+                console.log(`[TRACKING] Ajout à members_website: ${PRENOMClean} ${NOMClean}`);
 
                 const { data, error } = await sbClient
                     .from('members_website')
                     .insert([
                         {
-                            session_id: sessionId,
                             prenom: PRENOMClean,
-                            nom: NOMClean,
-                            interaction_type: interactionType
-                            // created_at et updated_at sont auto-gérés
+                            nom: NOMClean
                         }
                     ])
                     .select();
 
                 if (error) {
-                    console.error('[SUPABASE ERROR] Erreur lors de l\'enregistrement d\'interaction:', error);
-                    console.warn('[INTERACTION] L\'enregistrement n\'a pas pu être sauvegardé, mais la session continue');
+                    console.error('[SUPABASE ERROR] Erreur lors de l\'ajout à members_website:', error);
+                    console.warn('[TRACKING] L\'ajout au tracking a échoué, mais l\'authentification continue');
                     return false;
                 }
 
-                console.log('[INTERACTION] Interaction enregistrée:', data);
-                await fetchAndUpdateVisitorCounter();
+                console.log('[TRACKING] Succès:', data);
                 return true;
 
             } catch (err) {
-                console.error('[ERREUR FATALE] Exception lors du tracking d\'interaction:', err);
-                console.warn('[INTERACTION] L\'enregistrement n\'a pas pu être sauvegardé, mais la session continue');
+                console.error('[ERREUR FATALE] Exception lors du tracking:', err);
+                console.warn('[TRACKING] L\'ajout au tracking a échoué, mais l\'authentification continue');
                 return false;
             }
         }
@@ -588,10 +441,8 @@
                     .from('members_website')
                     .insert([
                         {
-                            session_id: sessionId,
                             prenom: PRENOMClean,
-                            nom: NOMClean,
-                            interaction_type: 'registration'
+                            nom: NOMClean
                         }
                     ])
                     .select();
@@ -610,8 +461,6 @@
 
                 storeUserSession(PRENOMClean, NOMClean, false, null);
                 showMessage('Bienvenue ! Redirection en cours...', 'success');
-                
-                await fetchAndUpdateVisitorCounter();
                 
                 setTimeout(() => {
                     redirectToDashboard();
@@ -645,8 +494,7 @@
                 
                 const PRENOMClean = sanitizeInput(PRENOM);
                 const NOMClean = sanitizeInput(NOM);
-                
-                await trackUserInteraction(PRENOMClean, NOMClean, 'authenticated_login');
+                await addToMembersWebsite(PRENOMClean, NOMClean);
                 
                 storeUserSession(PRENOMClean, NOMClean, false, memberRef);
                 showMessage('Bienvenue ! Redirection en cours...', 'success');
@@ -668,14 +516,12 @@
             await registerMember(PRENOM, NOM);
         });
 
-        document.getElementById('btnCancelRegister').addEventListener('click', async () => {
+        document.getElementById('btnCancelRegister').addEventListener('click', () => {
             document.getElementById('registerPrompt').style.display = 'none';
             const PRENOM = document.getElementById('PRENOM').value;
             const NOM = document.getElementById('NOM').value;
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
-            
-            await trackUserInteraction(PRENOMClean, NOMClean, 'guest_no_register');
             
             storeUserSession(PRENOMClean, NOMClean, true, null);
             showMessage('Connexion en mode invité. Redirection en cours...', 'success');
@@ -684,13 +530,11 @@
             }, 1000);
         });
 
-        document.getElementById('btnGuest').addEventListener('click', async () => {
+        document.getElementById('btnGuest').addEventListener('click', () => {
             const PRENOM = document.getElementById('PRENOM').value || 'Invité';
             const NOM = document.getElementById('NOM').value || '';
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
-            
-            await trackUserInteraction(PRENOMClean, NOMClean, 'guest_direct');
             
             storeUserSession(PRENOMClean, NOMClean, true, null);
             showMessage('Connexion en mode invité. Redirection en cours...', 'success');
@@ -705,7 +549,7 @@
             }
         });
 
-        window.addEventListener('DOMContentLoaded', async () => {
+        window.addEventListener('DOMContentLoaded', () => {
             console.log('[INIT] Initialisation de la page de connexion');
             
             if (!initSupabaseClient()) {
@@ -713,31 +557,9 @@
                 setFormEnabled(false);
             } else {
                 console.log('[INIT] Page prête');
-
-                // ✅ 1. TRACKER LA VISITE DE PAGE (IMMÉDIATEMENT)
-                await trackPageVisit();
-
-                // ✅ 2. Afficher le compteur
-                const visitorCounter = document.getElementById('visitorCounter');
-                visitorCounter.classList.remove('hidden');
-
-                // ✅ 3. Charger le compteur initial
-                await fetchAndUpdateVisitorCounter();
-
-                // ✅ 4. Actualiser le compteur toutes les 5 secondes
-                visitorCounterInterval = setInterval(async () => {
-                    await fetchAndUpdateVisitorCounter();
-                }, 5000);
             }
 
             document.getElementById('PRENOM').focus();
-        });
-
-        // Nettoyage à la fermeture de la page
-        window.addEventListener('beforeunload', () => {
-            if (visitorCounterInterval) {
-                clearInterval(visitorCounterInterval);
-            }
         });
     </script>
 </body>
