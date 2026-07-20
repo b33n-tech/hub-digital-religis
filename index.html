@@ -284,7 +284,7 @@
         <div class="counter-badge" id="counterBadge">0</div>
         <div>
             <div class="counter-label">Visiteurs</div>
-            <div class="counter-sublabel">sans connexion</div>
+            <div class="counter-sublabel">cette session</div>
         </div>
     </div>
 
@@ -331,6 +331,7 @@
 
         let sbClient = null;
         let visitorCounterInterval = null;
+        let sessionId = null;
 
         function initSupabaseClient() {
             try {
@@ -373,6 +374,7 @@
             sessionStorage.setItem('user_is_guest', isGuest);
             sessionStorage.setItem('user_ref', userRef);
             sessionStorage.setItem('session_start', new Date().toISOString());
+            sessionStorage.setItem('session_id', sessionId);
         }
 
         function redirectToDashboard() {
@@ -383,14 +385,62 @@
             return input.trim().replace(/\s+/g, ' ');
         }
 
+        // ===== GÉNÉRER UN ID UNIQUE POUR LA SESSION =====
+        function generateSessionId() {
+            return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        }
+
+        // ===== TRACKER LA VISITE DÈS LE CHARGEMENT =====
+        async function trackPageVisit() {
+            try {
+                console.log('[PAGE_VISIT] Enregistrement de la visite de la page');
+
+                sessionId = generateSessionId();
+                console.log('[PAGE_VISIT] Session ID généré:', sessionId);
+
+                // Récupérer les infos du navigateur
+                const userAgent = navigator.userAgent;
+                const language = navigator.language;
+                const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+                const { data, error } = await sbClient
+                    .from('page_visits')
+                    .insert([
+                        {
+                            session_id: sessionId,
+                            user_agent: userAgent,
+                            language: language,
+                            timezone: timezone,
+                            page: 'login',
+                            // created_at est auto-généré
+                        }
+                    ])
+                    .select();
+
+                if (error) {
+                    console.error('[SUPABASE ERROR] Erreur lors de l\'enregistrement de la visite:', error);
+                    console.warn('[PAGE_VISIT] La visite de page n\'a pas pu être enregistrée');
+                    return false;
+                }
+
+                console.log('[PAGE_VISIT] Visite enregistrée avec succès:', data);
+                return true;
+
+            } catch (err) {
+                console.error('[ERREUR FATALE] Exception lors du tracking de visite:', err);
+                return false;
+            }
+        }
+
         // ===== FONCTION COMPTEUR =====
         async function fetchAndUpdateVisitorCounter() {
             try {
                 console.log('[COUNTER] Actualisation du compteur de visiteurs');
 
+                // Compter le nombre de sessions UNIQUES (vrais visiteurs)
                 const { data, error } = await sbClient
-                    .from('members_website')
-                    .select('id', { count: 'exact', head: true });
+                    .from('page_visits')
+                    .select('session_id', { count: 'exact', head: true });
 
                 if (error) {
                     console.error('[COUNTER ERROR] Erreur lors de la lecture du compteur:', error);
@@ -398,7 +448,7 @@
                 }
 
                 const totalCount = data ? data.length : 0;
-                console.log('[COUNTER] Total visiteurs enregistrés:', totalCount);
+                console.log('[COUNTER] Total visiteurs uniques:', totalCount);
 
                 const counterBadge = document.getElementById('counterBadge');
                 const visitorCounter = document.getElementById('visitorCounter');
@@ -485,44 +535,40 @@
             }
         }
 
-        // ===== FONCTION TRACKING (adaptée à la structure réelle) =====
-        async function trackConnectionEvent(PRENOM, NOM) {
+        // ===== ENREGISTRER UNE INTERACTION (connexion/enregistrement) =====
+        async function trackUserInteraction(PRENOM, NOM, interactionType) {
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
 
             try {
-                console.log(`[TRACKING] Enregistrement de connexion: ${PRENOMClean} ${NOMClean}`);
+                console.log(`[INTERACTION] ${interactionType}: ${PRENOMClean} ${NOMClean}`);
 
-                // Les champs verified_at et updated_at sont auto-gérés par Supabase
-                // Seuls prenom et nom sont fournis explicitement
                 const { data, error } = await sbClient
                     .from('members_website')
                     .insert([
                         {
+                            session_id: sessionId,
                             prenom: PRENOMClean,
-                            nom: NOMClean
-                            // verified_at: null (sera rempli manuellement après vérification si besoin)
+                            nom: NOMClean,
+                            interaction_type: interactionType
                             // created_at et updated_at sont auto-gérés
                         }
                     ])
                     .select();
 
                 if (error) {
-                    console.error('[SUPABASE ERROR] Erreur lors de l\'enregistrement de connexion:', error);
-                    console.warn('[TRACKING] L\'enregistrement du suivi a échoué, mais la session continue');
+                    console.error('[SUPABASE ERROR] Erreur lors de l\'enregistrement d\'interaction:', error);
+                    console.warn('[INTERACTION] L\'enregistrement n\'a pas pu être sauvegardé, mais la session continue');
                     return false;
                 }
 
-                console.log('[TRACKING] Événement enregistré avec succès:', data);
-                
-                // Actualiser le compteur après ajout
+                console.log('[INTERACTION] Interaction enregistrée:', data);
                 await fetchAndUpdateVisitorCounter();
-                
                 return true;
 
             } catch (err) {
-                console.error('[ERREUR FATALE] Exception lors du tracking:', err);
-                console.warn('[TRACKING] L\'enregistrement du suivi a échoué, mais la session continue');
+                console.error('[ERREUR FATALE] Exception lors du tracking d\'interaction:', err);
+                console.warn('[INTERACTION] L\'enregistrement n\'a pas pu être sauvegardé, mais la session continue');
                 return false;
             }
         }
@@ -542,8 +588,10 @@
                     .from('members_website')
                     .insert([
                         {
+                            session_id: sessionId,
                             prenom: PRENOMClean,
-                            nom: NOMClean
+                            nom: NOMClean,
+                            interaction_type: 'registration'
                         }
                     ])
                     .select();
@@ -563,7 +611,6 @@
                 storeUserSession(PRENOMClean, NOMClean, false, null);
                 showMessage('Bienvenue ! Redirection en cours...', 'success');
                 
-                // Actualiser le compteur
                 await fetchAndUpdateVisitorCounter();
                 
                 setTimeout(() => {
@@ -599,7 +646,7 @@
                 const PRENOMClean = sanitizeInput(PRENOM);
                 const NOMClean = sanitizeInput(NOM);
                 
-                await trackConnectionEvent(PRENOMClean, NOMClean);
+                await trackUserInteraction(PRENOMClean, NOMClean, 'authenticated_login');
                 
                 storeUserSession(PRENOMClean, NOMClean, false, memberRef);
                 showMessage('Bienvenue ! Redirection en cours...', 'success');
@@ -628,7 +675,7 @@
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
             
-            await trackConnectionEvent(PRENOMClean, NOMClean);
+            await trackUserInteraction(PRENOMClean, NOMClean, 'guest_no_register');
             
             storeUserSession(PRENOMClean, NOMClean, true, null);
             showMessage('Connexion en mode invité. Redirection en cours...', 'success');
@@ -643,7 +690,7 @@
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
             
-            await trackConnectionEvent(PRENOMClean, NOMClean);
+            await trackUserInteraction(PRENOMClean, NOMClean, 'guest_direct');
             
             storeUserSession(PRENOMClean, NOMClean, true, null);
             showMessage('Connexion en mode invité. Redirection en cours...', 'success');
@@ -667,14 +714,17 @@
             } else {
                 console.log('[INIT] Page prête');
 
-                // Afficher le compteur
+                // ✅ 1. TRACKER LA VISITE DE PAGE (IMMÉDIATEMENT)
+                await trackPageVisit();
+
+                // ✅ 2. Afficher le compteur
                 const visitorCounter = document.getElementById('visitorCounter');
                 visitorCounter.classList.remove('hidden');
 
-                // Charger le compteur initial
+                // ✅ 3. Charger le compteur initial
                 await fetchAndUpdateVisitorCounter();
 
-                // Actualiser le compteur toutes les 5 secondes
+                // ✅ 4. Actualiser le compteur toutes les 5 secondes
                 visitorCounterInterval = setInterval(async () => {
                     await fetchAndUpdateVisitorCounter();
                 }, 5000);
