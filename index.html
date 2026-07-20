@@ -216,9 +216,78 @@
         .btn-cancel:hover {
             background: #cbd5e0;
         }
+
+        /* ===== STYLES COMPTEUR ===== */
+        .visitor-counter {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            font-size: 12px;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+        }
+
+        .visitor-counter.hidden {
+            display: none;
+        }
+
+        .counter-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 13px;
+        }
+
+        .counter-label {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .counter-sublabel {
+            font-size: 11px;
+            color: #999;
+        }
+
+        @media (max-width: 600px) {
+            .visitor-counter {
+                top: 10px;
+                right: 10px;
+                padding: 10px 12px;
+                font-size: 11px;
+            }
+
+            .counter-badge {
+                width: 24px;
+                height: 24px;
+                font-size: 12px;
+            }
+        }
     </style>
 </head>
 <body>
+    <!-- Compteur de visiteurs -->
+    <div class="visitor-counter hidden" id="visitorCounter">
+        <div class="counter-badge" id="counterBadge">0</div>
+        <div>
+            <div class="counter-label">Visiteurs</div>
+            <div class="counter-sublabel">sans connexion</div>
+        </div>
+    </div>
+
     <div class="login-container">
         <div class="login-header">
             <h1>ReligiS</h1>
@@ -261,6 +330,7 @@
         const SUPABASE_ANON_KEY = 'sb_publishable_NpdAjISRkvlmuO6cY3xljA_79dxiqkZ';
 
         let sbClient = null;
+        let visitorCounterInterval = null;
 
         function initSupabaseClient() {
             try {
@@ -313,6 +383,53 @@
             return input.trim().replace(/\s+/g, ' ');
         }
 
+        // ===== FONCTION COMPTEUR =====
+        async function fetchAndUpdateVisitorCounter() {
+            try {
+                console.log('[COUNTER] Actualisation du compteur de visiteurs');
+
+                const { data, error } = await sbClient
+                    .from('members_website')
+                    .select('id', { count: 'exact', head: true });
+
+                if (error) {
+                    console.error('[COUNTER ERROR] Erreur lors de la lecture du compteur:', error);
+                    return;
+                }
+
+                const totalCount = data ? data.length : 0;
+                console.log('[COUNTER] Total visiteurs enregistrés:', totalCount);
+
+                const counterBadge = document.getElementById('counterBadge');
+                const visitorCounter = document.getElementById('visitorCounter');
+
+                if (counterBadge) {
+                    counterBadge.textContent = totalCount;
+                }
+
+                if (visitorCounter && !visitorCounter.classList.contains('hidden')) {
+                    counterBadge.style.animation = 'pulse 0.4s ease';
+                    setTimeout(() => {
+                        counterBadge.style.animation = '';
+                    }, 400);
+                }
+
+            } catch (err) {
+                console.error('[COUNTER FATAL] Exception lors du comptage:', err);
+            }
+        }
+
+        // Animation pulse pour le badge
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes pulse {
+                0% { transform: scale(1); }
+                50% { transform: scale(1.1); }
+                100% { transform: scale(1); }
+            }
+        `;
+        document.head.appendChild(style);
+
         async function searchMemberInMembres(PRENOM, NOM) {
             hideMessage();
 
@@ -331,7 +448,7 @@
             setFormEnabled(false);
 
             try {
-                console.log(`[RECHERCHE] Recherche simultanée dans MEMBRES et members_website`);
+                console.log(`[RECHERCHE] Recherche dans MEMBRES`);
 
                 const { data: memberData, error: memberError } = await sbClient
                     .from('MEMBRES')
@@ -350,32 +467,10 @@
                     return null;
                 }
 
-                const { data: websiteData, error: websiteError } = await sbClient
-                    .from('members_website')
-                    .select('id, prenom, nom')
-                    .ilike('prenom', `%${PRENOMClean}%`)
-                    .ilike('nom', `%${NOMClean}%`)
-                    .limit(1);
-
-                if (websiteError) {
-                    console.error('[SUPABASE ERROR] Erreur lors de la recherche dans members_website:', websiteError);
-                    showMessage('Erreur lors de la vérification. Veuillez réessayer.', 'error');
-                    return null;
-                }
-
                 console.log(`[RECHERCHE] Résultats MEMBRES:`, memberData);
-                console.log(`[RECHERCHE] Résultats members_website:`, websiteData);
 
                 if (memberData && memberData.length > 0) {
                     return memberData;
-                }
-
-                if (websiteData && websiteData.length > 0) {
-                    return websiteData.map(item => ({
-                        REF: item.id,
-                        PRENOM: item.prenom,
-                        NOM: item.nom
-                    }));
                 }
                 
                 return [];
@@ -390,20 +485,24 @@
             }
         }
 
-        async function trackConnectionEvent(PRENOM, NOM, userType = 'registered') {
+        // ===== FONCTION TRACKING (adaptée à la structure réelle) =====
+        async function trackConnectionEvent(PRENOM, NOM) {
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
 
             try {
-                console.log(`[TRACKING] Enregistrement de connexion: ${PRENOMClean} ${NOMClean} (${userType})`);
+                console.log(`[TRACKING] Enregistrement de connexion: ${PRENOMClean} ${NOMClean}`);
 
+                // Les champs verified_at et updated_at sont auto-gérés par Supabase
+                // Seuls prenom et nom sont fournis explicitement
                 const { data, error } = await sbClient
                     .from('members_website')
                     .insert([
                         {
                             prenom: PRENOMClean,
-                            nom: NOMClean,
-                            user_type: userType
+                            nom: NOMClean
+                            // verified_at: null (sera rempli manuellement après vérification si besoin)
+                            // created_at et updated_at sont auto-gérés
                         }
                     ])
                     .select();
@@ -415,6 +514,10 @@
                 }
 
                 console.log('[TRACKING] Événement enregistré avec succès:', data);
+                
+                // Actualiser le compteur après ajout
+                await fetchAndUpdateVisitorCounter();
+                
                 return true;
 
             } catch (err) {
@@ -440,8 +543,7 @@
                     .insert([
                         {
                             prenom: PRENOMClean,
-                            nom: NOMClean,
-                            user_type: 'new_registration'
+                            nom: NOMClean
                         }
                     ])
                     .select();
@@ -460,6 +562,9 @@
 
                 storeUserSession(PRENOMClean, NOMClean, false, null);
                 showMessage('Bienvenue ! Redirection en cours...', 'success');
+                
+                // Actualiser le compteur
+                await fetchAndUpdateVisitorCounter();
                 
                 setTimeout(() => {
                     redirectToDashboard();
@@ -494,8 +599,7 @@
                 const PRENOMClean = sanitizeInput(PRENOM);
                 const NOMClean = sanitizeInput(NOM);
                 
-                // ✅ MODIFICATION : Enregistrement du suivi de connexion (à chaque connexion)
-                await trackConnectionEvent(PRENOMClean, NOMClean, 'authenticated');
+                await trackConnectionEvent(PRENOMClean, NOMClean);
                 
                 storeUserSession(PRENOMClean, NOMClean, false, memberRef);
                 showMessage('Bienvenue ! Redirection en cours...', 'success');
@@ -524,8 +628,7 @@
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
             
-            // ✅ MODIFICATION : Enregistrement du suivi pour les invités refusant l'enregistrement
-            await trackConnectionEvent(PRENOMClean, NOMClean, 'guest_no_register');
+            await trackConnectionEvent(PRENOMClean, NOMClean);
             
             storeUserSession(PRENOMClean, NOMClean, true, null);
             showMessage('Connexion en mode invité. Redirection en cours...', 'success');
@@ -540,8 +643,7 @@
             const PRENOMClean = sanitizeInput(PRENOM);
             const NOMClean = sanitizeInput(NOM);
             
-            // ✅ MODIFICATION : Enregistrement du suivi pour les invités directs
-            await trackConnectionEvent(PRENOMClean, NOMClean, 'guest_direct');
+            await trackConnectionEvent(PRENOMClean, NOMClean);
             
             storeUserSession(PRENOMClean, NOMClean, true, null);
             showMessage('Connexion en mode invité. Redirection en cours...', 'success');
@@ -556,7 +658,7 @@
             }
         });
 
-        window.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('DOMContentLoaded', async () => {
             console.log('[INIT] Initialisation de la page de connexion');
             
             if (!initSupabaseClient()) {
@@ -564,9 +666,28 @@
                 setFormEnabled(false);
             } else {
                 console.log('[INIT] Page prête');
+
+                // Afficher le compteur
+                const visitorCounter = document.getElementById('visitorCounter');
+                visitorCounter.classList.remove('hidden');
+
+                // Charger le compteur initial
+                await fetchAndUpdateVisitorCounter();
+
+                // Actualiser le compteur toutes les 5 secondes
+                visitorCounterInterval = setInterval(async () => {
+                    await fetchAndUpdateVisitorCounter();
+                }, 5000);
             }
 
             document.getElementById('PRENOM').focus();
+        });
+
+        // Nettoyage à la fermeture de la page
+        window.addEventListener('beforeunload', () => {
+            if (visitorCounterInterval) {
+                clearInterval(visitorCounterInterval);
+            }
         });
     </script>
 </body>
